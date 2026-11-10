@@ -90,8 +90,8 @@ static const char *code_for_locale(const char *loc) {
     if (!strncmp(l, "pt", 2)) return "pt-BR";  // (the only Portuguese the game has)
     if (!strncmp(l, "zh", 2))
         return strstr(l, "Hant") || strstr(l, "TW") || strstr(l, "HK") || strstr(l, "MO") ? "zh-Hant" : "zh-Hans";
-    static const char *const two[] = {"de", "it", "nl", "ru", "ja", "ko"};
-    for (int i = 0; i < 6; i++) if (!strncmp(l, two[i], 2)) return two[i];
+    static const char *const two[] = {"de", "it", "nl", "ru", "ja", "ko", "fa"};
+    for (int i = 0; i < 7; i++) if (!strncmp(l, two[i], 2)) return two[i];
     return "en-US";
 }
 

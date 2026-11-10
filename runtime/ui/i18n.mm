@@ -64,20 +64,24 @@ const Entry th[] = {
 const Entry he[] = {
 #include "i18n/he.inc"
     {nullptr, nullptr}};
+const Entry fa[] = {
+#include "i18n/fa.inc"
+    {nullptr, nullptr}};
 #undef T
 
 struct Table { const char *lang; const Entry *entries; };
 const Table tables[] = {{"es", es}, {"fr", fr}, {"de", de}, {"it", it}, {"nl", nl}, {"ru", ru}, {"pt", pt},
-                        {"ja", ja}, {"ko", ko}, {"zh-Hans", zh_hans}, {"zh-Hant", zh_hant}, {"th", th}, {"he", he}};
+                        {"ja", ja}, {"ko", ko}, {"zh-Hans", zh_hans}, {"zh-Hant", zh_hant}, {"th", th}, {"he", he},
+                        {"fa", fa}};
 
 struct Lang {
     const char *code;  // LanguageCode prefix (language_text_code)
     const char *ui;    // menu language
 };
-// (most specific first. "he": the game has no Hebrew, so only SAVAGEWIND_MENU_LANG=he picks it)
+// (most specific first. "he" and "fa": the game has no Hebrew or Persian, so SAVAGEWIND_MENU_LANG picks them or host locale)
 const Lang langs[] = {{"es", "es"}, {"fr", "fr"}, {"de", "de"}, {"it", "it"}, {"nl", "nl"}, {"ru", "ru"},
                       {"pt", "pt"}, {"ja", "ja"}, {"ko", "ko"}, {"zh-Hant", "zh-Hant"}, {"zh-Hans", "zh-Hans"},
-                      {"zh", "zh-Hans"}, {"th", "th"}, {"he", "he"}};
+                      {"zh", "zh-Hans"}, {"th", "th"}, {"he", "he"}, {"fa", "fa"}};
 
 std::mutex lock;
 const char *cur_ui = "en";
@@ -175,7 +179,126 @@ static void read_pack(const char *ui) {
     for (size_t i = 0; i + 1 < at->second.size(); i += 2) by_text[at->second[i]] = at->second[i + 1].c_str();
 }
 
-bool rtl_lang(const char *ui) { return !strcmp(ui, "he"); }
+// ------------------------------------------------------------------ UTF-8 decode / encode
+static unsigned decode(const unsigned char *&p) {
+    unsigned c = *p++;
+    if (c < 0x80) return c;
+    int n = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : c >= 0xC0 ? 1 : 0;
+    c &= 0x3F >> n;
+    for (int i = 0; i < n && (*p & 0xC0) == 0x80; i++) c = c << 6 | (*p++ & 0x3F);
+    return c;
+}
+
+static void encode(std::string &s, unsigned c) {
+    if (c < 0x80) s += (char)c;
+    else if (c < 0x800) s += (char)(0xC0 | c >> 6), s += (char)(0x80 | (c & 0x3F));
+    else if (c < 0x10000) s += (char)(0xE0 | c >> 12), s += (char)(0x80 | (c >> 6 & 0x3F)), s += (char)(0x80 | (c & 0x3F));
+    else
+        s += (char)(0xF0 | c >> 18), s += (char)(0x80 | (c >> 12 & 0x3F)), s += (char)(0x80 | (c >> 6 & 0x3F)),
+            s += (char)(0x80 | (c & 0x3F));
+}
+
+// ------------------------------------------------------------------ Persian / Arabic reshaping
+struct GlyphForms {
+    unsigned orig;
+    unsigned iso, fin, ini, med;
+    bool dual;
+};
+
+static const GlyphForms fa_forms[] = {
+    {0x622, 0xFE81, 0xFE82, 0xFE81, 0xFE82, false}, // آ
+    {0x627, 0xFE8D, 0xFE8E, 0xFE8D, 0xFE8E, false}, // ا
+    {0x628, 0xFE8F, 0xFE90, 0xFE91, 0xFE92, true},  // ب
+    {0x67E, 0xFB56, 0xFB57, 0xFB58, 0xFB59, true},  // پ
+    {0x62A, 0xFE95, 0xFE96, 0xFE97, 0xFE98, true},  // ت
+    {0x62B, 0xFE99, 0xFE9A, 0xFE9B, 0xFE9C, true},  // ث
+    {0x62C, 0xFE9D, 0xFE9E, 0xFE9F, 0xFEA0, true},  // ج
+    {0x686, 0xFB7A, 0xFB7B, 0xFB7C, 0xFB7D, true},  // چ
+    {0x62D, 0xFEA1, 0xFEA2, 0xFEA3, 0xFEA4, true},  // ح
+    {0x62E, 0xFEA5, 0xFEA6, 0xFEA7, 0xFEA8, true},  // خ
+    {0x62F, 0xFEA9, 0xFEAA, 0xFEA9, 0xFEAA, false}, // د
+    {0x630, 0xFEAB, 0xFEAC, 0xFEAB, 0xFEAC, false}, // ذ
+    {0x631, 0xFEAD, 0xFEAE, 0xFEAD, 0xFEAE, false}, // ر
+    {0x632, 0xFEAF, 0xFEB0, 0xFEAF, 0xFEB0, false}, // ز
+    {0x698, 0xFB8A, 0xFB8B, 0xFB8A, 0xFB8B, false}, // ژ
+    {0x633, 0xFEB1, 0xFEB2, 0xFEB3, 0xFEB4, true},  // س
+    {0x634, 0xFEB5, 0xFEB6, 0xFEB7, 0xFEB8, true},  // ش
+    {0x635, 0xFEB9, 0xFEBA, 0xFEBB, 0xFEBC, true},  // ص
+    {0x636, 0xFEBD, 0xFEBE, 0xFEBF, 0xFEC0, true},  // ض
+    {0x637, 0xFEC1, 0xFEC2, 0xFEC3, 0xFEC4, true},  // ط
+    {0x638, 0xFEC5, 0xFEC6, 0xFEC7, 0xFEC8, true},  // ظ
+    {0x639, 0xFEC9, 0xFECA, 0xFECB, 0xFECC, true},  // ع
+    {0x63A, 0xFECD, 0xFECE, 0xFECF, 0xFED0, true},  // غ
+    {0x641, 0xFED1, 0xFED2, 0xFED3, 0xFED4, true},  // ف
+    {0x642, 0xFED5, 0xFED6, 0xFED7, 0xFED8, true},  // ق
+    {0x6A9, 0xFB8E, 0xFB8F, 0xFB90, 0xFB91, true},  // ک
+    {0x643, 0xFED9, 0xFEDA, 0xFEDB, 0xFEDC, true},  // ك
+    {0x6AF, 0xFB92, 0xFB93, 0xFB94, 0xFB95, true},  // گ
+    {0x644, 0xFEDD, 0xFEDE, 0xFEDF, 0xFEE0, true},  // ل
+    {0x645, 0xFEE1, 0xFEE2, 0xFEE3, 0xFEE4, true},  // م
+    {0x646, 0xFEE5, 0xFEE6, 0xFEE7, 0xFEE8, true},  // ن
+    {0x648, 0xFEED, 0xFEEE, 0xFEED, 0xFEEE, false}, // و
+    {0x647, 0xFEE9, 0xFEEA, 0xFEEB, 0xFEEC, true},  // ه
+    {0x6CC, 0xFBFC, 0xFBFD, 0xFBFE, 0xFBFF, true},  // ی
+    {0x64A, 0xFEF1, 0xFEF2, 0xFEF3, 0xFEF4, true},  // ي
+    {0x626, 0xFE89, 0xFE8A, 0xFE8B, 0xFE8C, true},  // ئ
+    {0x624, 0xFE85, 0xFE86, 0xFE85, 0xFE86, false}, // ؤ
+    {0x629, 0xFE93, 0xFE94, 0xFE93, 0xFE94, false}, // ة
+};
+
+static const GlyphForms *find_fa_form(unsigned c) {
+    for (size_t i = 0; i < sizeof(fa_forms) / sizeof(fa_forms[0]); i++)
+        if (fa_forms[i].orig == c) return &fa_forms[i];
+    return nullptr;
+}
+
+static std::string fa_reshape(const char *utf8_in) {
+    if (!utf8_in || !*utf8_in) return "";
+    std::vector<unsigned> chars;
+    const unsigned char *p = (const unsigned char *)utf8_in;
+    while (*p) chars.push_back(decode(p));
+    if (chars.empty()) return "";
+
+    std::string out;
+    size_t n = chars.size();
+    for (size_t i = 0; i < n; i++) {
+        unsigned c = chars[i];
+        if (c == 0x644 && i + 1 < n) {
+            unsigned next_c = chars[i + 1];
+            bool prev_connects = (i > 0) && (find_fa_form(chars[i - 1]) && find_fa_form(chars[i - 1])->dual);
+            if (next_c == 0x622) {
+                encode(out, prev_connects ? 0xFEF6 : 0xFEF5);
+                i++;
+                continue;
+            } else if (next_c == 0x627) {
+                encode(out, prev_connects ? 0xFEFC : 0xFEFB);
+                i++;
+                continue;
+            }
+        }
+
+        const GlyphForms *f = find_fa_form(c);
+        if (!f) {
+            encode(out, c);
+            continue;
+        }
+
+        bool prev_connects = (i > 0) && (find_fa_form(chars[i - 1]) && find_fa_form(chars[i - 1])->dual);
+        bool next_connects = (i + 1 < n) && (find_fa_form(chars[i + 1]) != nullptr);
+
+        if (prev_connects && next_connects && f->dual)
+            encode(out, f->med);
+        else if (prev_connects)
+            encode(out, f->fin);
+        else if (next_connects && f->dual)
+            encode(out, f->ini);
+        else
+            encode(out, f->iso);
+    }
+    return out;
+}
+
+bool rtl_lang(const char *ui) { return !strcmp(ui, "he") || !strcmp(ui, "fa"); }
 void visual_line(const char *b, const char *e, char *out);  // (right to left, below)
 
 void refresh(void) {  // (lock held)
@@ -191,6 +314,16 @@ void refresh(void) {  // (lock held)
         if (!strcmp(t.lang, ui))
             for (const Entry *e = t.entries; e->en; e++) by_text[e->en] = e->tr;
     read_pack(ui);
+    if (!strcmp(ui, "fa")) {
+        static std::deque<std::string> fa_reshaped;
+        fa_reshaped.clear();
+        for (auto &kv : by_text) {
+            if (kv.second && *kv.second) {
+                fa_reshaped.push_back(fa_reshape(kv.second));
+                kv.second = fa_reshaped.back().c_str();
+            }
+        }
+    }
 }
 }  // namespace
 
@@ -216,23 +349,6 @@ int ui_lang_generation(void) {
 }
 
 // ------------------------------------------------------------------ upper case
-static unsigned decode(const unsigned char *&p) {
-    unsigned c = *p++;
-    if (c < 0x80) return c;
-    int n = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : c >= 0xC0 ? 1 : 0;
-    c &= 0x3F >> n;
-    for (int i = 0; i < n && (*p & 0xC0) == 0x80; i++) c = c << 6 | (*p++ & 0x3F);
-    return c;
-}
-
-static void encode(std::string &s, unsigned c) {
-    if (c < 0x80) s += (char)c;
-    else if (c < 0x800) s += (char)(0xC0 | c >> 6), s += (char)(0x80 | (c & 0x3F));
-    else if (c < 0x10000) s += (char)(0xE0 | c >> 12), s += (char)(0x80 | (c >> 6 & 0x3F)), s += (char)(0x80 | (c & 0x3F));
-    else
-        s += (char)(0xF0 | c >> 18), s += (char)(0x80 | (c >> 12 & 0x3F)), s += (char)(0x80 | (c >> 6 & 0x3F)),
-            s += (char)(0x80 | (c & 0x3F));
-}
 
 // ------------------------------------------------------------------ dynamic glyphs
 static std::mutex dyn_lock;
@@ -446,11 +562,13 @@ std::string ui_visual_order(const char *s) {
         std::lock_guard<std::mutex> g(lock);
         refresh();
         if (!rtl_lang(cur_ui)) return o;
+        if (!strcmp(cur_ui, "fa")) o = fa_reshape(o.c_str());
     }
+    std::string src = o;
     for (size_t a = 0; a <= o.size();) {
         size_t z = o.find('\n', a);
         if (z == std::string::npos) z = o.size();
-        visual_line(s + a, s + z, &o[a]);
+        visual_line(src.c_str() + a, src.c_str() + z, &o[a]);
         a = z + 1;
     }
     return o;
@@ -487,6 +605,15 @@ static const char *const he_fonts[] = {"C:/Windows/Fonts/segoeui.ttf", "C:/Windo
                                        "/usr/share/fonts/noto/NotoSansHebrew-Regular.ttf",
                                        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
                                        "/usr/share/fonts/TTF/DejaVuSans.ttf", "/System/Library/Fonts/ArialHB.ttc",
+                                       nullptr};
+
+// Persian: Segoe UI, Tahoma, Arial on Windows, Noto Sans Arabic on Linux, Geeza Pro on macOS
+static const char *const fa_fonts[] = {"C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/tahoma.ttf",
+                                       "C:/Windows/Fonts/arial.ttf",
+                                       "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+                                       "/usr/share/fonts/noto/NotoSansArabic-Regular.ttf",
+                                       "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                                       "/usr/share/fonts/TTF/DejaVuSans.ttf", "/System/Library/Fonts/GeezaPro.ttc",
                                        nullptr};
 
 // (Noto Sans CJK .ttc: face 0 is Japanese, 1 Korean, 2 Simplified, 3 Traditional Chinese)
@@ -538,8 +665,9 @@ bool ui_merge_fallback_font(ImFontAtlas *atlas, float size, const ImFontConfig *
     bool is_ru = !strcmp(lang, "ru") || !strcmp(game_lang, "ru");
     bool is_th = !strcmp(lang, "th") || !strcmp(game_lang, "th");
     bool is_he = !strcmp(lang, "he") || !strcmp(game_lang, "he");
+    bool is_fa = !strcmp(lang, "fa") || !strcmp(game_lang, "fa");
 
-    if (!is_cjk && !is_ru && !is_th && !is_he) return false;
+    if (!is_cjk && !is_ru && !is_th && !is_he && !is_fa) return false;
 
     // only the glyphs the language's texts use (a CJK font's full range would not fit an atlas texture), in both cases:
     // option labels are drawn upper-cased (tr_upper), with capitals the texts themselves may never use
@@ -601,6 +729,10 @@ bool ui_merge_fallback_font(ImFontAtlas *atlas, float size, const ImFontConfig *
                 shipped[0] = 0;
         }
         merged |= add_single_fallback(atlas, size, base, he_fonts, "he", ranges, shipped[0] ? shipped : nullptr);
+    }
+
+    if (is_fa) {
+        merged |= add_single_fallback(atlas, size, base, fa_fonts, "fa", ranges);
     }
 
     return merged;

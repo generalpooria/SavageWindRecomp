@@ -1,11 +1,11 @@
 # Menu language packs
 
-Savage Wind's own menus (the start screen and the in-game Options) come in 14 languages, built into the program
+Savage Wind's own menus (the start screen and the in-game Options) come in 15 languages, built into the program
 (`runtime/ui/i18n/<lang>.inc`). A **language pack** lets a player fix or finish one of them without waiting for a new
 build: a text file in the data folder that the menus read over the built-in table.
 
 - **Where:** `lang/<language>.txt` in the data folder (next to `savagewind.ini`). `<language>` is the menu language's
-  code: `en`, `de`, `es`, `fr`, `it`, `nl`, `pt`, `ru`, `ja`, `ko`, `zh-Hans`, `zh-Hant`, `th` or `he`.
+  code: `en`, `de`, `es`, `fr`, `it`, `nl`, `pt`, `ru`, `ja`, `ko`, `zh-Hans`, `zh-Hant`, `th`, `he` or `fa`.
 - **Format:** UTF-8, one text per line: the English text exactly as in the program, a tab, then the translation.
   `\n` stands for a line break, `\t` for a tab and `\\` for a backslash. Lines starting with `#` and empty lines are
   skipped. A line without a tab is skipped too (the log says so).
