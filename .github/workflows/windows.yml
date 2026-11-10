@@ -7,7 +7,7 @@ name: Windows
 
 on:
   push:
-    branches: [test, main]
+    branches: [test, main, 'feature/**']
   pull_request:
     branches: [test, main]
   workflow_dispatch:
@@ -39,3 +39,11 @@ jobs:
             mingw-w64-ucrt-x86_64-spirv-tools mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-nasm
       - name: Build
         run: make -j$(nproc) && ls -l build/savagewind.exe build/savagewind.dll.a
+      - name: Upload Savage Wind executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: SavageWind-Windows-Persian
+          path: |
+            build/savagewind.exe
+            build/savagewind-config.exe
+            build/savagewind.dll.a
